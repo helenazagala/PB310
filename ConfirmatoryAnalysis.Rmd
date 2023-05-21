@@ -1,0 +1,854 @@
+---
+title: "Analysis"
+---
+
+##  Study title and hypotheses
+
+This is the confirmatory analysis for the independent research project.
+
+The study sought to find the support for the following hypothesis:
+
+H1: Cultural distance between the country of birth and the country of migration predicts the employment rates of immigrants in the UK.
+H0: Cultural distance between the country of birth and the country of migration does not affect the employment rates of immigrants in the UK. 
+
+ 
+#### Load required packages
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(pwr)
+library(pwr2)
+library(MBESS)
+library(supernova)
+library(readr)
+library(ggplot2)
+library(lm.beta)
+library(ggpubr)
+library(mosaic)
+library(Hmisc)
+library(car)
+library(plyr)
+library(broom)
+library(readstata13)
+library(cowplot)
+library(stargazer)
+library(psych)
+library(naniar)
+library(sjlabelled)
+library(tidyverse)
+library(mice)
+library(VIM)
+library(MissMech)
+library(mice)
+library(MoEClust)
+library(miceadds)
+```
+
+
+
+
+```{r}
+PB130=function(x) {
+  w=length(x)
+  m1=mean(x)
+  m2=sum((x-m1)^2)
+  m3=sum((x-m1)^3)
+  m4=sum((x-m1)^4)
+  s1=sd(x)
+  skew=w*m3/(w-1)/(w-2)/s1^3
+  sdskew=sqrt( 6*w*(w-1) / ((w-2)*(w+1)*(w+3)) )
+  kurtosis=(w*(w+1)*m4 - 3*m2^2*(w-1)) / ((w-1)*(w-2)*(w-3)*s1^4)
+  sdkurtosis=sqrt( 4*(w^2-1) * sdskew^2 / ((w-3)*(w+5)) )
+  Zkurtosis=kurtosis/sdkurtosis
+  Zskew=skew/sdskew
+  mat=matrix(c(skew,kurtosis, sdskew,sdkurtosis, Zskew,Zkurtosis), 2,
+             dimnames=list(c("skew","kurtosis"), c("estimate","se","Z")))
+  return(mat)
+}
+```
+
+
+
+#### Load data
+
+### Independent and dependent variables
+### Cultural Distance
+The cultural distance variable was taken from the Cultural Distance dataset, which utilizes the World Value Survey datasets to calculate the cultural distance between countries. To ensure that all countries of interest were included in the dataset, the study utilized the data from 2005 to 2014 (WVS Wave 5 and 6). The whole dataset is publicly available for download at https://world.culturalytics.com/.
+
+
+```{r}
+cultural_distance <- read.csv("~/Desktop/LSE/Year3/PB310/PB310_Compendium/Appendices/CulturalDistance/cultural_distance_GB")
+```
+
+### Labour Force Participation
+
+The Labour Force Participation  variable was extracted from the EU Census 2011, which offers a publicly available, representative measure of economic activity of the UK residents. As per the study requirements, the variables pulled out from the dataset were the labour activity status and country of birth.  
+The whole dataset is available at: https://ec.europa.eu/CensusHub2/
+
+```{r}
+uk_labour_force <- read.csv("~/Desktop/LSE/Year3/PB310/PB310_Compendium/Appendices/EU_Census/uk_unemployment_all.csv")
+```
+
+
+### Controls
+
+Genetic Distance Data was taken from Spolaore and Wacziarg's (2017) New Genetic Distance dataset. The dataset is available at https://sites.tufts.edu/enricospolaore/.
+
+
+```{r}
+genetic_distance <- read.dta13("~/Desktop/LSE/Year3/PB310/PB310_Compendium/Appendices/GeneticDistance/newgendist.dta")
+```
+
+All of the remaining control variables were extracted from the most recent Varieties of Democracy dataset v. 11. The variables included were:
+- GDP (GDP per capita, transformed by the natural logarithm)
+- Population Size
+- Education Level (average years of education in the population over 15 y.o.)
+- Regional Identifier (in which geographic region is the country located)
+
+The dataset is available at https://www.v-dem.net/en/data/data/v-dem-dataset-v111/. In order to match the collection dates of the control variables, the data used was to restricted 2011. 
+
+
+```{r}
+var_dem_2011 <- read.csv("~/Desktop/LSE/Year3/PB310/PB310_Compendium/Appendices/VDem/var_dem_2011")
+```
+
+
+
+
+### Combining Data Sources
+In order to perform further analyses, all of the aforementioned variables were combined into one dataset. 
+
+The initial variables were transformed into countries' distance from the UK by subtracting the country score from the UK's score on the given variable.
+
+```{r}
+#GDP distance
+var_dem_2011$distance_GDP <- var_dem_2011[var_dem_2011$country_name=="United Kingdom",]$e_migdppcln - var_dem_2011$e_migdppcln
+
+#population size distance
+var_dem_2011$distance_population <- log(var_dem_2011[var_dem_2011$country_name=="United Kingdom",]$e_wb_pop) - log(var_dem_2011$e_wb_pop)
+
+#education level distance
+var_dem_2011$distance_education <- var_dem_2011[var_dem_2011$country_name=="United Kingdom",]$e_peaveduc - var_dem_2011$e_peaveduc
+```
+
+
+To decrease the probability of the Simpson’s paradox, the regional identifier was transformed into a continent-level categorization. The transformation was performed by classifying the variables from the V-Dem Codebook. 
+
+
+```{r}
+
+var_dem_2011$regional_identifier <- as.factor(ifelse(var_dem_2011$e_regiongeo <=  4, "Europe", #Europe
+                          ifelse(var_dem_2011$e_regiongeo  <= 9, "Africa", #Africa
+                          ifelse(var_dem_2011$e_regiongeo  <= 14, "Asia", #Asia
+                          ifelse(var_dem_2011$e_regiongeo  == 15, "Oceania", #Oceania
+                          ifelse(var_dem_2011$e_regiongeo  == 18, "SouthAmerica", #South America
+                          ifelse(var_dem_2011$e_regiongeo  <= 19, "NorthAmerica", #North America
+                          )))))))
+```
+
+
+
+For further analyses, only the variables of interest were extracted from the transformed dataset.
+```{r}
+var_dem_2011 <- var_dem_2011 %>% select(c('country_name', 'distance_GDP', 'distance_population', 'distance_education','regional_identifier'))
+```
+
+
+The  countries names were checked to ensure that the country labels matched between the datasets, and the data was merged into one dataset. 
+```{r}
+genetic_distance_UK <-  genetic_distance[genetic_distance$country_1=="United Kingdom" |genetic_distance$country_2=="United Kingdom",]
+genetic_distance_UK$comp_country <- ifelse(genetic_distance_UK$country_1=="United Kingdom", genetic_distance_UK$country_2, genetic_distance_UK$country_1)
+genetic_distance_UK$comp_country <- as.character(genetic_distance_UK$comp_country)
+```
+
+
+
+```{r}
+cultural_distance <- cultural_distance %>% add_row(Name = "Montenegro", X = 81, Great.Britain = cultural_distance$Great.Britain[cultural_distance$Name=="Serbia and Montenegro"])
+cultural_distance$Name[cultural_distance$Name=="Viet Nam"] <- "Vietnam"
+cultural_distance$Name[cultural_distance$Name=="Serbia and Montenegro"] <- "Serbia"
+```
+
+
+
+```{r}
+genetic_distance_UK$comp_country[genetic_distance_UK$comp_country=="Russian Federation"] <- "Russia"
+genetic_distance_UK$comp_country[genetic_distance_UK$comp_country=="Yemen, People's Democratic Republic of"] <- "Yemen"
+genetic_distance_UK$comp_country[genetic_distance_UK$comp_country=="U.S.A"] <- "United States"
+genetic_distance_UK$comp_country[genetic_distance_UK$comp_country=="Korea"] <- "South Korea"
+```
+
+
+```{r}
+temporary_merged <- merge(cultural_distance, genetic_distance_UK, by.x = "Name", by.y = "comp_country", all = T)
+var_dem_2011$country_name <- as.character(var_dem_2011$country_name)
+var_dem_2011$country_name[var_dem_2011$country_name=="United States of America"] <- "United States"
+var_dem_2011$country_name[var_dem_2011$country_name=="Palestine/Gaza"] <- "Palestine"
+temporary_merged2 <- merge(temporary_merged, var_dem_2011, by.x = "Name", by.y = "country_name", all = T)
+```
+
+
+```{r}
+uk_labour_force$origin_country <- as.character(uk_labour_force$origin_country)
+uk_labour_force$origin_country[uk_labour_force$origin_country=="United States of America"] <- "United States"
+uk_labour_force$origin_country[uk_labour_force$origin_country=="Russian Federation"] <- "Russia"
+uk_labour_force$origin_country[uk_labour_force$origin_country=="Taiwan; Province of China"] <- "Taiwan"
+```
+
+
+Next, the labour force participation rate was calculated by dividing the number of employed respondents by the number of to economically active respondents for each country.
+
+```{r}
+uk_labour_force$UK_employment <- uk_labour_force$Employed/uk_labour_force$Currently.economically.active
+```
+
+The datasets were then merged with the previously created dataset.
+
+```{r}
+all_data_UK <- merge(temporary_merged2, uk_labour_force, by.x = "Name", by.y = "origin_country", all = T)
+```
+
+
+```{r}
+all_data_UK$CulturalDistance <- all_data_UK$Great.Britain
+all_data_UK$genetic_distance <- all_data_UK$new_gendist_weighted
+all_data_UK$Total <- as.numeric(all_data_UK$Total)
+```
+
+```{r}
+all_data_UK$logTotal <- log(all_data_UK$Total)
+```
+
+The columns which would not be used in further analyses were dropped.
+```{r}
+all_data_UK$genetic_distance <- all_data_UK$new_gendist_weighted
+```
+
+
+```{r}
+all_data_UK <- all_data_UK %>% select(c('Name', 'genetic_distance','UK_employment', 'logTotal','distance_GDP', 'distance_education', 'distance_population',  'CulturalDistance', 'regional_identifier', 'Total'))
+```
+
+Due to the use of dataset with varying inclusion criteria, the data was restricted to the countries for which both the dependent and independent variable were present. 
+```{r}
+subset_UK <- all_data_UK[!is.na(all_data_UK$CulturalDistance) & !is.na(all_data_UK$UK_employment),]
+```
+
+Working datasets were removed to clean the environment.
+```{r}
+rm(temporary_merged2, temporary_merged, uk_labour_force, var_dem_2011, all_data_UK, cultural_distance, genetic_distance, genetic_distance_UK)
+```
+
+
+
+The initial distrivution of data was examined.
+
+```{r}
+describeBy(subset_UK)
+```
+
+
+```{r}
+PB130(subset_UK$Total)
+```
+
+
+As the initial investigation suggested that the total population size might be skewed, this was further investigated.
+
+
+```{r}
+ggplot(subset_UK, aes(x=Total)) + geom_histogram(binwidth=60000, colour="black", fill="gray70")  + theme_classic()   + xlab("Population Size") + ylab("Density")
+
+```
+
+```{r}
+PB130(subset_UK$Total)
+```
+
+
+As such, the distribution was investigated for log transformed variable.
+
+```{r}
+ggplot(subset_UK, aes(x=logTotal)) + geom_histogram(binwidth=.70, colour="black", fill="gray70")  + theme_classic()   + xlab("Population Size") + ylab("Density")
+
+```
+
+
+```{r}
+PB130(subset_UK$logTotal)
+```
+
+
+As the transformationcorrected  the severe skew, log transformed variable was used in subsequent analysis.
+
+
+
+#Missing data analysis
+
+Due to the objective nature of the regional identifier, the missing cases of this variable were imputed by hand. 
+
+```{r}
+subset_UK$regional_identifier[subset_UK$Name=="Andorra"] <- "Europe"
+```
+
+
+For the numerical variables, the amount of missing data was further investigated.
+
+```{r}
+
+missing_data <-
+  subset_UK %>%
+  select(c('CulturalDistance','UK_employment', 'genetic_distance', 'logTotal', 'distance_GDP', 'distance_education', 'distance_population')) # select out only the numerical items
+#md.pattern(missing_data) 
+
+```
+
+
+```{r}
+aggr(missing_data, col=c('white','red'), numbers=TRUE, sortVars=TRUE, cex.axis=.7, gap=3, ylab=c("Percentage of missing data","Missing Data Pattern"))
+vis_miss(missing_data)
+```
+
+
+In order to check the missingness pattern, the MCAR test was performed.
+```{r}
+out.MCAR.ws <- TestMCARNormality(missing_data, del.lesscases = 1)
+summary(out.MCAR.ws)
+```
+
+
+The non-parametric test of homoscedasticity suggested that the data was MCAR (p = 0.08). As such, missForest approach was used.
+
+
+```{r}
+library("missForest")
+```
+
+
+```{r}
+tree <- subset_UK %>% select(c( "genetic_distance", "UK_employment", "logTotal", "distance_GDP","distance_education", "distance_population", "regional_identifier", "CulturalDistance"))
+```
+
+```{r}
+final_dataset <- missForest(tree)
+```
+
+
+```{r}
+final_dataset <- final_dataset$ximp
+Name <- subset_UK %>% select(c( "Name"))
+final_dataset <- cbind(final_dataset, Name)
+```
+
+```{r}
+rm(out.MCAR.ws, missing_data, tree, Name)
+```
+
+
+```{r}
+vis_miss(final_dataset)
+```
+
+
+#Outlier analysis
+
+The outlier analysis has been performed according to the guidelines from Tabachnick and Fidell (2013), and Osborne (2013). As per their recommendations, the univariate and multivariate analysis were removed.
+
+
+Univariate outliers were identified by standarizing the variables and removing all cases crossing the z =3,29 threshold. 
+
+```{r}
+final_dataset$zgenetic <- scale(final_dataset$CulturalDistance)
+final_dataset$zcultural <- scale(final_dataset$genetic_distance)
+final_dataset$zemploy <- scale(final_dataset$UK_employment)
+final_dataset$zgdp <- scale(final_dataset$distance_GDP)
+final_dataset$zeduc <- scale(final_dataset$distance_education)
+final_dataset$zpop <- scale(final_dataset$distance_population)
+final_dataset$ztotal <- scale(final_dataset$logTotal)
+
+final_dataset <- 
+  final_dataset %>%
+  filter(zgenetic >= -3.30 & zgenetic <= 3.30)
+
+final_dataset <- 
+  final_dataset %>%
+  filter(zcultural >= -3.30 & zcultural <= 3.30)
+
+final_dataset <- 
+  final_dataset %>%
+  filter(zemploy >= -3.30 & zemploy <= 3.30)
+
+final_dataset <- 
+  final_dataset %>%
+  filter(zgdp >= -3.30 & zgdp <= 3.30)
+
+final_dataset <- 
+  final_dataset %>%
+  filter(zeduc >= -3.30 & zeduc <= 3.30)
+
+final_dataset <- 
+  final_dataset %>%
+  filter(zpop >= -3.30 & zpop <= 3.30)
+
+final_dataset <- 
+  final_dataset %>%
+  filter(ztotal >= -3.30 & ztotal <= 3.30)
+
+```
+
+The importance of the removal of the single univariate was supported by the MAD method.
+
+```{r}
+install.packages("Routliers")
+
+Routliers::outliers_mad(subset_UK$CulturalDistance)
+```
+
+
+For the multivariate outliers, analysis removed all cases for which the mahalanobis distances crossed the critical value for p = 0.001. 
+
+
+
+```{r}
+final_dataset$dummy <- 1
+```
+
+
+```{r}
+linear.model1 <- lm(dummy ~ CulturalDistance + genetic_distance + distance_education + distance_population + distance_GDP + logTotal , data=final_dataset) # build linear model with focial variables as predictors
+final_dataset$res  <- final_dataset$dummy - predict(linear.model1) # save residuals
+final_dataset$mahal <- MoE_mahala(linear.model1, final_dataset$res)
+summary(linear.model1)
+```
+As the model had 6 degrees of freedom,  the critical chi-square value at the p = .001 was 22.46. As such, all cases which crossed this treshold were removed.
+
+```{r}
+final_dataset <- 
+  final_dataset %>%
+  filter(mahal <= 22.46)
+rm(linear.model1)
+```
+
+```{r}
+final_dataset <- final_dataset %>% select("Name", "UK_employment", "CulturalDistance", "logTotal", "genetic_distance",  "distance_education" , "distance_GDP", "distance_population" ,"regional_identifier")
+```
+
+
+
+#Descriptive statistics
+
+```{r}
+describeBy(final_dataset)
+```
+
+
+```{r}
+
+ggplot(subset_UK, aes(x=UK_employment)) + geom_histogram(binwidth=.02, colour="black", fill="gray70")  + theme_classic()   + xlab("Employment Rate") + ylab("Density")
+
+```
+
+`
+
+```{r}
+
+ggplot(subset_UK, aes(x=CulturalDistance)) + geom_histogram(binwidth=.05, colour="black", fill="gray70")  + theme_classic()   + xlab("Cultural Distance") + ylab("Density")
+
+```
+
+
+
+```{r}
+PB130(final_dataset$UK_employment)
+PB130(final_dataset$CulturalDistance)
+PB130(final_dataset$genetic_distance)
+PB130(final_dataset$logTotal)
+PB130(final_dataset$distance_education)
+PB130(final_dataset$distance_GDP)
+PB130(final_dataset$distance_population)
+```
+
+
+
+
+
+
+
+#Assumptions
+
+
+As per the recommendations of Best and Wolf (2014), the data was tested for the following assumptions:
+
+1. Linearity of the relationship
+3. Homoscedasticity 
+4. No autocorrelation
+5. No multicollinearity
+5. Normality of Residuals
+
+
+First, the assumptions were checked for the simple model.
+
+```{r}
+lm_control <- lm(UK_employment ~ CulturalDistance, data = final_dataset) #checking the assumption for continuous variables
+library(performance)
+check_model(lm_control)
+```
+
+
+
+
+Then, the assumptions were checked for the confirmatory model will all controls.
+
+```{r}
+lm_control2 <- lm(UK_employment ~ CulturalDistance + genetic_distance + distance_GDP + distance_education + distance_population  + logTotal , data = final_dataset) #checking the assumption for continuous variables
+library(performance)
+check_model(lm_control2)
+```
+
+
+```{r}
+library("olsrr")
+```
+
+
+```{r}
+olsrr::ols_test_normality(lm_control2)
+```
+
+
+```{r}
+car::vif(lm_control2)
+```
+
+
+
+The analysis allowed to accept all assumptions.
+
+
+
+# Confirmatory Analysis
+
+## Simple model with no controls
+
+```{r}
+simple_model <- lm(UK_employment ~ CulturalDistance, data = final_dataset)
+summary(simple_model)
+```
+
+
+```{r}
+supernova(simple_model)
+```
+
+
+```{r}
+lm.beta(simple_model)
+```
+
+
+
+```{r}
+simple_boot <- Boot(simple_model, f=coef, R = 5000) 
+summary(simple_boot) 
+```
+
+```{r}
+confint(simple_boot, level = .95, type = "norm")
+```
+
+```{r}
+rm(simple_boot, lm_control, lm_control2)
+```
+
+```{r}
+cor(final_dataset$UK_employment, final_dataset$CulturalDistance, method = c("pearson"))
+```
+
+```{r}
+pwr.r.test(r = .63, sig.level = .05, n = 77)
+```
+
+
+
+```{r}
+library(apaTables)
+#apa.reg.table(simple_model, filename = "Table_simple_model_APA.doc", table.number = 1)
+```
+
+
+
+
+# Confirmatory Model
+
+
+```{r}
+controls_log_model <- lm(UK_employment ~ CulturalDistance + genetic_distance + logTotal + distance_education + distance_GDP + distance_population + regional_identifier, data = final_dataset)
+summary(controls_log_model)
+```
+```{r}
+supernova(controls_log_model)
+```
+
+
+```{r}
+lm.beta(controls_log_model)
+```
+
+
+```{r}
+tidy(lm.beta(controls_log_model), conf.int = TRUE, conf.level = 0.95)
+
+```
+
+```{r}
+#apa.reg.table(controls_log_model, filename = "Table_controls_log_APA.doc", table.number = 2)
+```
+
+
+
+```{r}
+controls_boot <- Boot(controls_log_model, f=coef, R = 5000) 
+confint(controls_boot, level = .95, type = "norm")
+```
+
+
+```{r}
+rm(controls_boot)
+```
+
+
+
+# Comparison of the models
+
+
+```{r}
+anova(simple_model, controls_log_model)
+```
+
+
+
+# Robustness analysis
+
+The confirmatory model was run with different combinations of controls, to check the robustness of the results.
+
+
+```{r}
+model1 <- lm(UK_employment ~ CulturalDistance, data = final_dataset)
+model2 <- lm(UK_employment ~ CulturalDistance + distance_education + distance_population + distance_GDP, data = final_dataset)
+model3 <- lm(UK_employment ~ CulturalDistance  + distance_education + distance_population + distance_GDP + logTotal, data = final_dataset)
+model4 <- lm(UK_employment ~ CulturalDistance  + distance_education + distance_population + distance_GDP + factor(regional_identifier), data = final_dataset)
+model5 <- lm(UK_employment ~ CulturalDistance +  distance_education + distance_population + distance_GDP + logTotal + factor(regional_identifier) + genetic_distance, data = final_dataset)
+```
+
+
+```{r}
+stargazer(model1, model2, model3, model4, model5, type="text",
+          star.char = c("*", "**", "***"),
+          star.cutoffs = c( 0.05, 0.01, 0.001),
+          notes = c(" * p<0.05; ** p<0.01; *** p<0.001"))
+```
+
+
+
+
+
+```{r}
+rm(model1, model2, model3, model4, model5)
+```
+
+Visual representation of the main relationship:
+(Open the graph in a fill window to increase readability)
+
+```{r}
+graph <- ggscatterhist(final_dataset, x="CulturalDistance", "UK_employment",
+                           shape = 1,
+                             label = "Name",
+                             font.label = c(18, "plain"),
+                             add = "reg.line",
+                             ylab = "Employment Rate", 
+                           font.x = c(22, "plain"),
+                            font.y = c(22, "plain"),
+                           xlab = "Cultural Distance",
+                           conf.int = TRUE,
+                             cor.coef = TRUE,
+                             fullrange = TRUE,
+                             cor.coeff.args = list(method = "pearson", label.x = 0, label.y = .8, label.sep = "\n", size = 12)) + theme(strip.text.x = element_text(size=rel(8)))
+```
+
+
+
+
+
+
+```{r}
+car::avPlot(controls_log_model, variable = "CulturalDistance", id=FALSE, xlab = "Cultural Distance", ylab = "Employment Rate", col.lines = "black", grid = F, cex.lab = 1)
+```
+
+
+```{r}
+install.packages("remotes")
+remotes::install_github("loganstundal/POL3085")
+```
+
+
+
+```{r}
+POL3085::effect(controls_log_model, "CulturalDistance", x.label = "Cultural Distance", y.label = "Employment Rate", grid = F, rug  = F)
+```
+
+
+
+
+
+# Check robustness with no outliers removed
+
+To further check the robustness of the results, the model was run without outliers removed.
+
+ 
+```{r}
+subset_UK_copy  <-subset_UK
+```
+
+```{r}
+tree <- subset_UK %>% select(c( "genetic_distance", "UK_employment",  "logTotal", "distance_GDP","distance_education", "distance_population", "regional_identifier", "CulturalDistance"))
+```
+
+Missing data treatment
+
+```{r}
+subset_UK <- missForest(tree)
+```
+
+
+```{r}
+subset_UK <- subset_UK$ximp
+```
+
+```{r}
+subset_UK$Name <- subset_UK_copy$Name
+```
+
+Assumption check
+
+```{r}
+theme_set(theme_classic())
+lm_control <- lm(UK_employment ~ CulturalDistance + genetic_distance + logTotal + distance_education + distance_population + distance_GDP , data = subset_UK)
+par(mfrow = c(2, 2))
+plot(lm_control)
+```
+
+
+Confirmatory model results
+```{r}
+controls_test<- lm(UK_employment ~ CulturalDistance + genetic_distance + logTotal + distance_education + distance_GDP + distance_population + regional_identifier, data = subset_UK)
+summary(controls_test)
+```
+
+
+
+
+
+
+
+# Check robustness with alternate data screening
+
+
+## Multple Imputation
+
+As the multiple imputation with outliers can produce misleading result, outliers were removed before the data imputation.
+
+
+```{r}
+subset_UK_MI <- subset_UK
+```
+
+
+
+```{r}
+subset_UK_MI$zgenetic <- scale(subset_UK_MI$CulturalDistance)
+subset_UK_MI$zcultural <- scale(subset_UK_MI$genetic_distance)
+subset_UK_MI$zemploy <- scale(subset_UK_MI$UK_employment)
+subset_UK_MI$zgdp <- scale(subset_UK_MI$distance_GDP)
+subset_UK_MI$zeduc <- scale(subset_UK_MI$distance_education)
+subset_UK_MI$zpop <- scale(subset_UK_MI$distance_population)
+subset_UK_MI$ztotal <- scale(subset_UK_MI$logTotal)
+
+subset_UK_MI <- 
+  subset_UK_MI %>%
+  filter(zgenetic >= -3.30 & zgenetic <= 3.30)
+
+subset_UK_MI <- 
+  subset_UK_MI %>%
+  filter(zcultural >= -3.30 & zcultural <= 3.30)
+
+subset_UK_MI <- 
+  subset_UK_MI %>%
+  filter(zemploy >= -3.30 & zemploy <= 3.30)
+
+subset_UK_MI <- 
+  subset_UK_MI %>%
+  filter(zgdp >= -3.30 & zgdp <= 3.30)
+
+subset_UK_MI <- 
+  subset_UK_MI %>%
+  filter(zeduc >= -3.30 & zeduc <= 3.30)
+
+subset_UK_MI <- 
+  subset_UK_MI %>%
+  filter(zpop >= -3.30 & zpop <= 3.30)
+
+subset_UK_MI <- 
+  subset_UK_MI %>%
+  filter(ztotal >= -3.30 & ztotal <= 3.30)
+
+```
+
+
+
+```{r}
+subset_UK_MI$dummy <- 1
+```
+
+
+```{r}
+linear.model.MI <- lm(dummy ~ CulturalDistance + genetic_distance + distance_education + distance_population + distance_GDP + logTotal , data=subset_UK_MI) 
+subset_UK_MI$res  <- subset_UK_MI$dummy - predict(linear.model.MI) 
+subset_UK_MI$mahal <- MoE_mahala(linear.model.MI, subset_UK_MI$res)
+summary(linear.model.MI)
+```
+As the model had 6 degrees of freedom,  the critical chi-square value at the p = .001 was 22.46. As such, all cases which crossed this treshold were removed.
+
+```{r}
+subset_UK_MI <- 
+  subset_UK_MI %>%
+  filter(mahal <= 22.46)
+rm(linear.model.MI)
+```
+
+
+```{r}
+subset_UK_MI <- subset_UK_MI %>% select("Name", "UK_employment", "CulturalDistance", "logTotal", "genetic_distance",  "distance_education" , "distance_GDP", "distance_population" ,"regional_identifier")
+```
+
+
+
+Then, the multiple imputation was performed
+
+
+```{r}
+imp <- mice(subset_UK_MI, m=5, maxit=10, method="pmm", printFlag =  FALSE)
+
+```
+
+
+```{r}
+model_controls_MI <- with(data=imp, exp=lm(UK_employment ~ CulturalDistance + genetic_distance + logTotal + distance_education + distance_GDP + distance_population + regional_identifier)) # fit the linear model with the imputed dataset
+lin.pool2 <- pool(model_controls_MI) # pool the estimates across the multiple imputations
+summary(lin.pool2) # output
+```
+
+```{r}
+mi.anova(mi.res=imp, formula="UK_employment ~ CulturalDistance + genetic_distance + logTotal + distance_education + distance_GDP + distance_population + regional_identifier")
+```
+
+

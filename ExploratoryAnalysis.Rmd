@@ -1,0 +1,490 @@
+---
+title: "Exploratory Analysis"
+---
+
+##  Exploratory Analysis
+
+
+For the exploratory analysis, we followed the exact same steps as in the confirmatory analysis (missing data treatment, outliers removal, data analysis)
+
+
+
+```{r}
+beliefs <- read.csv("~/Desktop/LSE/Year3/PB310/PB310_Compendium/Appendices/CulturalDistance/SubDimensions/allbeliefs4.csv")
+beliefs <- beliefs %>% select(c("Name", 'Great.Britain2005.2014'))
+names(beliefs)[names(beliefs) == "Great.Britain2005.2014"] <- "beliefs"
+
+social_rel <- read.csv("~/Desktop/LSE/Year3/PB310/PB310_Compendium/Appendices/CulturalDistance/SubDimensions/allsocialrelations4.csv")
+social_rel <- social_rel %>% select(c( 'Great.Britain2005.2014'))
+names(social_rel)[names(social_rel) == "Great.Britain2005.2014"] <- "social_rel"
+
+sexuality <- read.csv("~/Desktop/LSE/Year3/PB310/PB310_Compendium/Appendices/CulturalDistance/SubDimensions/allsexuality2.csv")
+sexuality <- sexuality %>% select(c( 'Great.Britain2005.2014'))
+names(sexuality)[names(sexuality) == "Great.Britain2005.2014"] <- "sexuality"
+
+political <- read.csv("~/Desktop/LSE/Year3/PB310/PB310_Compendium/Appendices/CulturalDistance/SubDimensions/allpolitical9.csv")
+political <- political %>% select(c('Great.Britain2005.2014'))
+names(political)[names(political) == "Great.Britain2005.2014"] <- "political"
+
+misc <- read.csv("~/Desktop/LSE/Year3/PB310/PB310_Compendium/Appendices/CulturalDistance/SubDimensions/allmisc5.csv")
+misc <- misc %>% select(c( 'Great.Britain2005.2014'))
+names(misc)[names(misc) == "Great.Britain2005.2014"] <- "misc"
+
+law <- read.csv("~/Desktop/LSE/Year3/PB310/PB310_Compendium/Appendices/CulturalDistance/SubDimensions/alllaw3.csv")
+law <- law %>% select(c( 'Great.Britain2005.2014'))
+names(law)[names(law) == "Great.Britain2005.2014"] <- "law"
+
+group_memb <- read.csv("~/Desktop/LSE/Year3/PB310/PB310_Compendium/Appendices/CulturalDistance/SubDimensions/allgroupmembership4.csv")
+group_memb <- group_memb %>% select(c( 'Great.Britain2005.2014'))
+names(group_memb)[names(group_memb) == "Great.Britain2005.2014"] <- "group_memb"
+
+financial <- read.csv("~/Desktop/LSE/Year3/PB310/PB310_Compendium/Appendices/CulturalDistance/SubDimensions/allfinancial2.csv")
+financial <- financial %>% select(c( 'Great.Britain2005.2014'))
+names(financial)[names(financial) == "Great.Britain2005.2014"] <- "financial"
+
+
+```
+
+
+
+```{r}
+subdimensions <- cbind(beliefs, financial, law, group_memb, sexuality, misc, political, social_rel)
+rm(beliefs, financial, law, group_memb, sexuality, misc, political, social_rel)
+```
+
+
+Remove the 2010-2014 suffix for all columns and country names
+
+```{r}
+for (col in 1:ncol(subdimensions)){
+    colnames(subdimensions)[col] <-  sub("2005.*", "", colnames(subdimensions)[col])
+}
+subdimensions$Name=gsub("2005.*","",subdimensions$Name)
+
+head(subdimensions)
+
+
+
+```
+
+```{r}
+subdimensions <- subdimensions %>% add_row(Name = "Montenegro", beliefs = subdimensions$beliefs[subdimensions$Name=="Serbia and Montenegro"], financial = subdimensions$financial[subdimensions$Name=="Serbia and Montenegro"],  law = subdimensions$law[subdimensions$Name=="Serbia and Montenegro"],  sexuality = subdimensions$sexuality[subdimensions$Name=="Serbia and Montenegro"],  group_memb = subdimensions$group_memb[subdimensions$Name=="Serbia and Montenegro"],  misc = subdimensions$misc[subdimensions$Name=="Serbia and Montenegro"], political = subdimensions$political[subdimensions$Name=="Serbia and Montenegro"], social_rel = subdimensions$social_rel[subdimensions$Name=="Serbia and Montenegro"])
+subdimensions$Name[subdimensions$Name=="Viet Nam"] <- "Vietnam"
+subdimensions$Name[subdimensions$Name=="Serbia and Montenegro"] <- "Serbia"
+```
+
+
+
+## Combine all data sources
+
+
+```{r}
+all_data_exploratory<- merge(subset_UK_copy, subdimensions, by = "Name", all = T)
+```
+
+
+
+```{r}
+all_data_exploratory <- all_data_exploratory[!is.na(all_data_exploratory$CulturalDistance) & !is.na(all_data_exploratory$UK_employment),]
+
+```
+
+
+
+
+#Missing data analysis
+
+```{r}
+missing_data_exploratory <-
+  all_data_exploratory %>%
+  select(c('CulturalDistance','UK_employment', 'genetic_distance', 'logTotal', 'distance_GDP', 'distance_education', 'distance_population', 'beliefs', 'financial', 'law', 'group_memb', 'sexuality','misc', 'political', 'social_rel')) # select out only the numerical items
+
+md.pattern(missing_data_exploratory) 
+```
+
+
+```{r}
+aggr(missing_data_exploratory, col=c('white','red'), numbers=TRUE, sortVars=TRUE, cex.axis=.7, gap=3, ylab=c("Percentage of missing data","Missing Data Pattern"))
+vis_miss(missing_data_exploratory)
+```
+
+
+
+```{r}
+out.MCAR.ws <- TestMCARNormality(missing_data_exploratory, del.lesscases = 1)
+summary(out.MCAR.ws)
+```
+
+
+
+```{r}
+library("missForest")
+```
+
+
+```{r}
+tree <- all_data_exploratory %>% select(c( "genetic_distance", "UK_employment", "logTotal", "distance_GDP","distance_education", "distance_population", "regional_identifier", "CulturalDistance",  'beliefs', 'financial', 'law', 'group_memb', 'sexuality','misc', 'political', 'social_rel'))
+```
+
+```{r}
+final_dataset_exploratory <- missForest(tree)
+```
+
+
+```{r}
+final_dataset_exploratory <- final_dataset_exploratory$ximp
+Name <- all_data_exploratory %>% select(c( "Name"))
+final_dataset_exploratory <- cbind(final_dataset_exploratory, Name)
+```
+
+```{r}
+rm(out.MCAR.ws, missing_data_exploratory, tree, Name)
+```
+
+
+
+
+
+#Outlier analysis
+
+```{r}
+final_dataset_exploratory$zgenetic <- scale(final_dataset_exploratory$CulturalDistance)
+final_dataset_exploratory$zcultural <- scale(final_dataset_exploratory$genetic_distance)
+final_dataset_exploratory$zemploy <- scale(final_dataset_exploratory$UK_employment)
+final_dataset_exploratory$zgdp <- scale(final_dataset_exploratory$distance_GDP)
+final_dataset_exploratory$zeduc <- scale(final_dataset_exploratory$distance_education)
+final_dataset_exploratory$zpop <- scale(final_dataset_exploratory$distance_population)
+final_dataset_exploratory$ztotal <- scale(final_dataset_exploratory$logTotal)
+
+final_dataset_exploratory$z0 <- scale(final_dataset_exploratory$sexuality)
+final_dataset_exploratory$z1 <- scale(final_dataset_exploratory$beliefs)
+final_dataset_exploratory$z2 <- scale(final_dataset_exploratory$group_memb)
+final_dataset_exploratory$z3 <- scale(final_dataset_exploratory$misc)
+final_dataset_exploratory$z4 <- scale(final_dataset_exploratory$financial)
+final_dataset_exploratory$z5 <- scale(final_dataset_exploratory$law)
+final_dataset_exploratory$z6 <- scale(final_dataset_exploratory$political)
+final_dataset_exploratory$z7 <- scale(final_dataset_exploratory$social_rel)
+
+final_dataset_exploratory <- 
+  final_dataset_exploratory %>%
+  filter(zgenetic >= -3.30 & zgenetic <= 3.30)
+
+final_dataset_exploratory <- 
+  final_dataset_exploratory %>%
+  filter(zcultural >= -3.30 & zcultural <= 3.30)
+
+final_dataset_exploratory <- 
+  final_dataset_exploratory %>%
+  filter(zemploy >= -3.30 & zemploy <= 3.30)
+
+final_dataset_exploratory <- 
+  final_dataset_exploratory %>%
+  filter(zgdp >= -3.30 & zgdp <= 3.30)
+
+final_dataset_exploratory <- 
+  final_dataset_exploratory %>%
+  filter(zeduc >= -3.30 & zeduc <= 3.30)
+
+final_dataset_exploratory <- 
+  final_dataset_exploratory %>%
+  filter(zpop >= -3.30 & zpop <= 3.30)
+
+final_dataset_exploratory <- 
+  final_dataset_exploratory %>%
+  filter(ztotal >= -3.30 & ztotal <= 3.30)
+
+
+
+final_dataset_exploratory <- 
+  final_dataset_exploratory %>%
+  filter(z0 >= -3.30 & z0 <= 3.30)
+
+final_dataset_exploratory <- 
+  final_dataset_exploratory %>%
+  filter(z1 >= -3.30 & z1 <= 3.30)
+
+final_dataset_exploratory <- 
+  final_dataset_exploratory %>%
+  filter(z2 >= -3.30 & z2 <= 3.30)
+
+final_dataset_exploratory <- 
+  final_dataset_exploratory %>%
+  filter(z3 >= -3.30 & z3 <= 3.30)
+
+final_dataset_exploratory <- 
+  final_dataset_exploratory %>%
+  filter(z4 >= -3.30 & z4 <= 3.30)
+final_dataset_exploratory <- 
+  final_dataset_exploratory %>%
+  filter(z5 >= -3.30 & z5 <= 3.30)
+final_dataset_exploratory <- 
+  final_dataset_exploratory %>%
+  filter(z6 >= -3.30 & z6 <= 3.30)
+final_dataset_exploratory <- 
+  final_dataset_exploratory %>%
+  filter(z7 >= -3.30 & z7 <= 3.30)
+
+```
+
+
+```{r}
+final_dataset_exploratory$dummy <- 1
+```
+
+
+```{r}
+linear.model1 <- lm(dummy ~ CulturalDistance + genetic_distance + distance_education + distance_population + distance_GDP + logTotal + beliefs + political + financial + law + sexuality + misc + group_memb + social_rel, data=final_dataset_exploratory) # build linear model with focial variables as predictors
+final_dataset_exploratory$res  <- final_dataset_exploratory$dummy - predict(linear.model1) # save residuals
+final_dataset_exploratory$mahal <- MoE_mahala(linear.model1, final_dataset_exploratory$res)
+summary(linear.model1)
+```
+
+
+As the model had 14 degrees of freedom,  the critical chi-square value at the p = .001 was 32.91. As such, all cases which crossed this treshold were removed.
+
+```{r}
+final_dataset_exploratory <- 
+  final_dataset_exploratory %>%
+  filter(mahal <= 32.91)
+rm(linear.model1)
+```
+
+```{r}
+final_dataset_exploratory <- final_dataset_exploratory %>% select("Name", "UK_employment", "CulturalDistance", "logTotal", "genetic_distance",  "distance_education" , "distance_GDP", "distance_population" ,"regional_identifier", 'beliefs', 'financial', 'law', 'group_memb', 'sexuality','misc', 'political', 'social_rel')
+```
+
+
+
+```{r}
+describeBy(final_dataset_exploratory)
+```
+
+
+# Exploratory models for each subdimension
+
+
+## Beliefs
+
+
+```{r}
+lm_control <- lm(UK_employment ~ genetic_distance + distance_GDP + distance_education + distance_population + logTotal +  beliefs , data = final_dataset_exploratory) #checking the assumption for continuous variables
+library(performance)
+check_model(lm_control)
+rm(lm_control)
+```
+
+```{r}
+
+model_beliefs <- lm(UK_employment ~ beliefs + genetic_distance + distance_GDP + distance_education + distance_population + logTotal + regional_identifier, data = final_dataset_exploratory) 
+summary(model_beliefs)
+```
+
+```{r}
+supernova(model_beliefs)
+```
+
+
+```{r}
+#apa.reg.table(model_beliefs, filename = "beliefs.doc", table.number = 1)
+```
+
+
+
+
+## Law
+
+
+```{r}
+lm_control <- lm(UK_employment ~ genetic_distance + distance_GDP + distance_education + distance_population + logTotal +  law , data = final_dataset_exploratory) #checking the assumption for continuous variables
+library(performance)
+check_model(lm_control)
+rm(lm_control)
+```
+
+
+```{r}
+
+model_law <- lm(UK_employment ~ law  + genetic_distance + distance_GDP + distance_education + distance_population + logTotal + regional_identifier, data = final_dataset_exploratory) 
+summary(model_law)
+```
+
+```{r}
+supernova(model_law)
+```
+
+
+```{r}
+#apa.reg.table(model_law, filename = "law.doc", table.number = 1)
+```
+
+
+
+## Financial
+
+
+```{r}
+lm_control <- lm(UK_employment ~ genetic_distance + distance_GDP + distance_education + distance_population + logTotal +  financial , data = final_dataset_exploratory) #checking the assumption for continuous variables
+library(performance)
+check_model(lm_control)
+rm(lm_control)
+```
+
+
+```{r}
+
+model_financial <- lm(UK_employment ~ financial  + genetic_distance + distance_GDP + distance_education + distance_population + logTotal + regional_identifier, data = final_dataset_exploratory) 
+summary(model_financial)
+```
+
+```{r}
+supernova(model_financial)
+```
+
+
+```{r}
+#apa.reg.table(model_financial, filename = "financial.doc", table.number = 1)
+```
+
+
+
+
+## Social Relationships
+
+```{r}
+lm_control <- lm(UK_employment ~ social_rel + genetic_distance + distance_GDP + distance_education + distance_population + logTotal  , data = final_dataset_exploratory) #checking the assumption for continuous variables
+library(performance)
+check_model(lm_control)
+rm(lm_control)
+```
+
+
+```{r}
+
+model_social <- lm(UK_employment ~ social_rel  + genetic_distance + distance_GDP + distance_education + distance_population + logTotal + regional_identifier, data = final_dataset_exploratory) 
+summary(model_social)
+```
+
+```{r}
+supernova(model_social)
+```
+
+
+```{r}
+#apa.reg.table(model_social, filename = "social_rel.doc", table.number = 1)
+```
+
+
+
+## Group Membership
+
+```{r}
+lm_control <- lm(UK_employment ~ group_memb + genetic_distance + distance_GDP + distance_education + distance_population + logTotal  , data = final_dataset_exploratory) #checking the assumption for continuous variables
+library(performance)
+check_model(lm_control)
+rm(lm_control)
+```
+
+```{r}
+
+model_group_memb <- lm(UK_employment ~ group_memb + genetic_distance + distance_GDP + distance_education + distance_population + logTotal + regional_identifier, data = final_dataset_exploratory) 
+summary(model_group_memb)
+```
+
+```{r}
+supernova(model_group_memb)
+```
+
+
+```{r}
+#apa.reg.table(model_group_memb, filename = "group_memb.doc", table.number = 1)
+```
+
+
+
+## Sexuality
+
+```{r}
+lm_control <- lm(UK_employment ~ sexuality  + genetic_distance + distance_GDP + distance_education + distance_population + logTotal , data = final_dataset_exploratory)  #checking the assumption for continuous variables
+library(performance)
+check_model(lm_control)
+rm(lm_control)
+```
+
+
+
+```{r}
+model_sexuality <- lm(UK_employment ~ sexuality  + genetic_distance + distance_GDP + distance_education + distance_population + logTotal + regional_identifier, data = final_dataset_exploratory) 
+summary(model_sexuality)
+```
+
+```{r}
+supernova(model_sexuality)
+```
+
+
+```{r}
+#apa.reg.table(model_sexuality, filename = "sexuality.doc", table.number = 1)
+```
+
+
+
+## Misc
+
+```{r}
+lm_control <- lm(UK_employment ~ genetic_distance + distance_GDP + distance_education + distance_population + logTotal +  misc , data = final_dataset_exploratory) #checking the assumption for continuous variables
+library(performance)
+check_model(lm_control)
+rm(lm_control)
+```
+
+```{r}
+model_misc <- lm(UK_employment ~ misc  + genetic_distance + distance_GDP + distance_education + distance_population + logTotal + regional_identifier, data = final_dataset_exploratory) 
+summary(model_misc)
+```
+
+```{r}
+supernova(model_misc)
+```
+
+
+```{r}
+#apa.reg.table(model_misc, filename = "misc.doc", table.number = 1)
+```
+
+
+
+## Political
+
+
+```{r}
+lm_control <- lm(UK_employment ~   genetic_distance + distance_GDP + distance_education + distance_population + logTotal +  political , data = final_dataset_exploratory) #checking the assumption for continuous variables
+library(performance)
+check_model(lm_control)
+rm(lm_control)
+```
+
+```{r}
+
+model_political <- lm(UK_employment ~ political + genetic_distance + distance_GDP + distance_education + distance_population + logTotal + regional_identifier, data = final_dataset_exploratory) 
+summary(model_political)
+```
+
+```{r}
+supernova(model_political)
+```
+
+
+
+
+
+## All subdimensions
+
+```{r}
+stargazer(model_beliefs, model_law, model_political, model_sexuality, model_group_memb, model_social, model_financial, model_misc, type="text", star.char = c("*", "**"), star.cutoffs = c( 0.05, 0.01), notes = c(" * p<0.05; ** p<0.01"))
+```
+
+
+
+
+
+
